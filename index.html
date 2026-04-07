@@ -1323,10 +1323,23 @@
   tiles = makeTiles();
   renderAllPalettes();
 
+  /** @type {number | null} */
+  let resizeTimer = null;
   window.addEventListener("resize", ()=>{
-    tiles.forEach(t=>{
-      if(t.bgOK && t.maskOK) t.resizeAll();
-    });
+    if(resizeTimer != null){
+      clearTimeout(resizeTimer);
+    }
+    resizeTimer = setTimeout(()=>{
+      resizeTimer = null;
+      tiles.forEach((t)=>{
+        if(!(t && t.bgOK && t.maskOK)) return;
+        // 先落盘，避免 resize 重建 canvas 时把当前涂抹态清空后再被错误保存。
+        t.saveStateNow();
+        t.resizeAll();
+        // 按新尺寸拉伸恢复 overlay/correctPaint，避免滚动触发 resize 后“看起来重置”。
+        t.restoreStateIfAny();
+      });
+    }, 120);
   });
 
   function normalize4(s){
