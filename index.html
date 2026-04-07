@@ -395,7 +395,7 @@
   const ANSWER_CACHE_KEY = "color_inputs_cache_v1";  // ✅ riddle 同源：localStorage 输入缓存
 
   /* ✅ NEW: 4 副图涂抹状态缓存（localStorage） */
-  const TILE_STATE_KEY = "color_tiles_state_v2";
+  const TILE_STATE_KEY = "color_tiles_state_v3";
 
   /**
    * 10 色两行×五列。谜题唯一正确色为第二行第三格 `#0070C0`（与 TILES.correctColor 一致）；其余为干扰色。
@@ -422,7 +422,7 @@
    */
   const TILES = [
     { key: "t1", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#0070C0" },
-    { key: "t2", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#0070C0" },
+    { key: "t2", bg: "green.png", mask: "green_mask.png", reveal: { type: "I" }, correctColor: "#0070C0" },
     { key: "t3", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#0070C0" },
     { key: "t4", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#0070C0" },
   ];
@@ -433,10 +433,12 @@
    */
   const X_BOX_REL = { x: 0, y: 0, w: 1, h: 1 };
   const X_STROKE_FACTOR = 0.22;
+  const I_STROKE_FACTOR = 0.12;
+  const I_SIZE_FACTOR = 0.56;
 
   const BRUSH_RADIUS = 18;
 
-  const ANSWER = "xxxx";
+  const ANSWER = "xixx";
   const HINT_TEXT = "线索：四个图里被“挖出来”的字符，按顺序组成答案。";
 
   /* =========================================================
@@ -989,6 +991,22 @@
     }
 
     /**
+     * 手写风格「i」：竖笔 + 上方一点，尺寸相对 x 更小。
+     * @param {number} cx
+     * @param {number} cy
+     * @param {number} s
+     * @returns {Path2D}
+     */
+    buildIPath(cx, cy, s){
+      const p = new Path2D();
+      p.moveTo(cx + (-4) * s, cy + (-24) * s);
+      p.quadraticCurveTo(cx + (0) * s, cy + (24) * s, cx + (2) * s, cy + (62) * s);
+      p.moveTo(cx + (0) * s, cy + (-62) * s);
+      p.lineTo(cx + (0) * s, cy + (-62) * s);
+      return p;
+    }
+
+    /**
      * 根据蒙版图生成涂抹裁剪用 alpha：白=禁涂、黑=可涂；并计算可涂区域 bbox 供字母定位。
      */
     rebuildWhiteMask(){
@@ -1028,7 +1046,7 @@
     }
 
     /**
-     * 在可涂区域内绘制「x」蒙版；中心优先用黑色区域质心，并钳制在 boxRel 内框内。
+     * 在可涂区域内绘制字母蒙版（X/I）；中心优先用黑色区域质心，并钳制在 boxRel 内框内。
      */
     rebuildLetterMask(){
       const w = this.letterMaskCanvas.width;
@@ -1044,7 +1062,10 @@
       const bh = Math.max(1, bbox.maxy - bbox.miny);
 
       const rel = this.tile.reveal.boxRel || X_BOX_REL;
-      const strokeFactor = this.tile.reveal.strokeFactor != null ? this.tile.reveal.strokeFactor : X_STROKE_FACTOR;
+      const t = this.tile.reveal.type || "X";
+      const strokeFactor = this.tile.reveal.strokeFactor != null
+        ? this.tile.reveal.strokeFactor
+        : (t === "I" ? I_STROKE_FACTOR : X_STROKE_FACTOR);
 
       const bx = bbox.minx + bw * rel.x;
       const by = bbox.miny + bh * rel.y;
@@ -1056,10 +1077,13 @@
       cx = Math.min(bx + boxW, Math.max(bx, cx));
       cy = Math.min(by + boxH, Math.max(by, cy));
 
-      const s = Math.min(boxW, boxH) / 140;
-      const strokeW = Math.max(14, Math.round(Math.min(boxW, boxH) * strokeFactor));
+      const sizeFactor = this.tile.reveal.sizeFactor != null
+        ? this.tile.reveal.sizeFactor
+        : (t === "I" ? I_SIZE_FACTOR : 1);
+      const s = Math.min(boxW, boxH) / 140 * sizeFactor;
+      const strokeW = Math.max(t === "I" ? 10 : 14, Math.round(Math.min(boxW, boxH) * strokeFactor));
 
-      const path = this.buildXPath(cx, cy, s);
+      const path = (t === "I") ? this.buildIPath(cx, cy, s) : this.buildXPath(cx, cy, s);
 
       this.letterMaskCtx.save();
       this.letterMaskCtx.strokeStyle = "white";
