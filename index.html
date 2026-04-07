@@ -97,7 +97,8 @@
     }
 
     .tileRow .paletteWrap{
-      margin-top: 8px;
+      /* 在图与调色盘之间多留约一行正文的空隙 */
+      margin-top: calc(8px + var(--fs-body) * var(--lh-body));
       padding-top: 2px;
     }
 
