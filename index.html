@@ -1,0 +1,1378 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <!-- ✅ 全页面禁用缩放（双指捏合/双击缩放都禁） -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="format-detection" content="telephone=no,address=no,email=no">
+  <title>Color Puzzle</title>
+  <link rel="stylesheet" href="../styles/puzzle-ui.css">
+  <style>
+    :root{
+      --maxw: 980px;
+      --bg:#fff;
+      --text:#111;
+
+      --fs-body: 18px;
+      --lh-body: 1.6;
+
+      --hint-fs:18px;
+      --hint-lh:1.6;
+
+      --swatch: clamp(24px, 7.2vw, 34px);
+      --swatch-gap: clamp(8px, 2.4vw, 12px);
+
+      /* ✅ 选中白圈厚度：想更细就改 2px */
+      --ring: 4px;
+      --ring-inset: 4px;
+
+      --gap: 18px;
+      --frame: 4px;
+
+      --fs-btn: 18px;
+      --fw-btn: 600;
+      --h-btn: 52px;
+      --w-btn: 240px;
+
+      --c-border:#000;
+      --c-swatch-ring:#fff;
+
+      --c-ok:#0b6b2b;
+      --c-danger:#b00020;
+
+      --space-title-board: 24px;
+    }
+
+    *{ box-sizing:border-box; }
+    html,body{ height:100%; }
+
+    /* ✅ 进一步阻止双击缩放（不影响点击） */
+    html, body{ touch-action: manipulation; }
+
+    .green{ color:#2E7D32; }
+
+    body{
+      margin:0;
+      background:var(--bg);
+      color:var(--text);
+      font-family:system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+      font-size:var(--fs-body);
+      line-height:var(--lh-body);
+      -webkit-text-size-adjust:100%;
+    }
+
+    .wrap{
+      max-width:var(--maxw);
+      margin:0 auto;
+      padding:18px 14px 28px;
+    }
+
+    .title{
+      margin:4px 0 var(--space-title-board);
+      font-size:var(--hint-fs);
+      line-height:var(--hint-lh);
+      font-weight:700;
+      text-align:left;
+      white-space:pre-wrap;
+    }
+
+    /* ✅ 四宫格边框：纯白 */
+    .board{
+      width:100%;
+      background:#fff;
+      border: var(--frame) solid #fff;
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+      align-items:start;
+      align-content:start;
+      overflow:hidden;
+    }
+
+    .cell{
+      position:relative;
+      background:#fff;
+      overflow:hidden;
+      user-select:none;
+      -webkit-user-select:none;
+
+      min-width:0;
+      aspect-ratio: 1 / 1;
+
+      font-size:0;
+      line-height:0;
+    }
+
+    /* ✅ 分隔线：纯白 */
+    .cell.rline{ border-right: var(--frame) solid #fff; }
+    .cell.bline{ border-bottom: var(--frame) solid #fff; }
+
+    /* ✅ 底图 + 蒙版：统一外扩 2px（稳定值） */
+    .cell img,
+    canvas.overlay{
+      position:absolute;
+      inset:-2px;
+      width:calc(100% + 4px);
+      height:calc(100% + 4px);
+      display:block;
+    }
+
+    .cell img{ object-fit:cover; }
+
+    /* =========================================================
+       ✅ 关键：未选颜色可滚动；选中颜色后锁定为只涂抹
+       ========================================================= */
+    .cell{ touch-action: pan-y; }
+    canvas.overlay{ touch-action: pan-y; }
+
+    .board.paintLocked .cell{ touch-action: none; }
+    .board.paintLocked canvas.overlay{ touch-action: none; }
+
+    .loading{
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:14px;
+      line-height:1.4;
+      background:rgba(255,255,255,.78);
+      backdrop-filter:blur(2px);
+      padding:12px;
+      text-align:center;
+    }
+    .loading.hide{ display:none; }
+
+    .paletteWrap{
+      margin-top: 14px;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      gap:10px;
+      width:100%;
+      overflow:visible;
+      padding: 10px 0 6px;
+    }
+
+    .palette{
+      display:grid;
+      /* ✅ 10 个颜色：两行每行 5 个 */
+      grid-template-columns: repeat(5, var(--swatch));
+      grid-auto-rows: var(--swatch);
+      gap: var(--swatch-gap);
+      justify-content:center;
+      align-content:center;
+      width: 100%;
+      max-width: min(100%, calc(5 * var(--swatch) + 4 * var(--swatch-gap)));
+    }
+
+    :root{
+      --ring-w: 3px;
+      --ring-inset: 3px;
+    }
+
+    .swatch{
+      width:var(--swatch);
+      height:var(--swatch);
+      border-radius:999px;
+      background:var(--c);
+      border:none;
+      padding:0;
+      cursor:pointer;
+      outline:none;
+      -webkit-tap-highlight-color:transparent;
+      position:relative;
+      box-sizing:border-box;
+    }
+
+    .swatch.selected::after{
+      content:"";
+      position:absolute;
+      left:50%;
+      top:50%;
+      width: calc(100% - (2 * var(--ring-inset)));
+      height: calc(100% - (2 * var(--ring-inset)));
+      transform: translate(-50%, -50%);
+      border-radius:999px;
+      box-sizing:border-box;
+      box-shadow: inset 0 0 0 var(--ring-w) var(--c-swatch-ring);
+      background: transparent;
+      pointer-events:none;
+    }
+
+    .answerBlock{
+      margin-top: 18px;
+      display:flex;
+      flex-direction:column;
+      gap: 18px;
+    }
+
+    .answerRow{
+      display:flex;
+      align-items:center;
+      gap: 10px;
+      flex-wrap:wrap;
+    }
+
+    .answerLabel{
+      font-size: var(--hint-fs);
+      line-height: var(--hint-lh);
+      font-weight:700;
+      margin:0;
+    }
+
+    .ansInput{
+      width:4em;
+      height:40px;
+      padding:0 6px;
+      border:2px solid var(--c-border);
+      font-weight:700;
+      font-family:inherit;
+      border-radius:0;
+      font-size:18px;
+      text-align:center;
+      outline:none;
+      box-shadow:none;
+      -webkit-appearance:none;
+      appearance:none;
+      line-height:40px;
+    }
+    .ansInput:focus{ outline:none; box-shadow:none; }
+
+    .actions{
+      display:flex;
+      gap:12px;
+      justify-content:center;
+      flex-wrap:nowrap;
+      align-items:center;
+    }
+
+    button.uiBtn{
+      width:var(--w-btn);
+      height:var(--h-btn);
+      padding:0 18px;
+      box-sizing:border-box;
+      font-size:var(--fs-btn);
+      font-weight:600;
+      background:#fff;
+      color:#000;
+      border:2px solid var(--c-border);
+      cursor:pointer;
+      border-radius:0;
+      -webkit-tap-highlight-color:transparent;
+      -webkit-user-select:none;
+      -webkit-touch-callout:none;
+      user-select:none;
+      font-family:inherit;
+      transition:none;
+      touch-action: manipulation;
+    }
+
+    @media (hover:hover) and (pointer:fine){
+      button.uiBtn:hover{ background:#000; color:#fff; }
+    }
+
+    button.uiBtn:active{
+      background:#000;
+      color:#fff;
+      transform:none;
+    }
+
+    button.uiBtn.invert{
+      background:#000;
+      color:#fff;
+    }
+
+    button.uiBtn:disabled{
+      opacity:.45;
+      cursor:default;
+    }
+
+    button.uiBtn:disabled:active{
+      background:#fff;
+      color:#000;
+    }
+
+    .msg{
+      min-height: 1.4em;
+      font-size:14px;
+      margin-top: 0;
+      line-height:1.6;
+    }
+    .msg.ok{ color: var(--c-ok); font-weight:700; }
+
+    .hintBox{
+      display:none;
+      border-left: 4px solid #000;
+      padding: 10px 12px;
+      background: #fff;
+      font-size: 16px;
+      line-height: 1.7;
+    }
+    .hintBox.show{ display:block; }
+
+    @media (max-width:520px){
+      button.uiBtn{ width:46vw; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="title">继续往<span class="green">“天平路康平路路口”</span>方向前进，到达路口之前，仔细留意马路两边的街景。你会先后在街面上看到以下4个图案（并不是很隐蔽）。选择正确的颜色涂抹每个图缺失色彩的区域，找到线索。</div>
+
+    <div class="board" id="board"></div>
+
+    <div class="paletteWrap">
+      <div class="palette" id="palette"></div>
+    </div>
+
+    <div class="answerBlock">
+      <div class="answerRow">
+        <div class="answerLabel">请依次输入隐藏的字母（不用区分大小写）：</div>
+        <input id="ans" class="ansInput" type="text" inputmode="latin" autocomplete="off" autocapitalize="none"
+               spellcheck="false" maxlength="4" />
+      </div>
+
+      <div class="actions">
+        <button class="uiBtn" id="btnHint" type="button">获得提示</button>
+        <button class="uiBtn" id="btnSubmit" type="button">提交答案</button>
+      </div>
+
+      <div class="hintBox" id="hintBox"></div>
+      <div class="msg" id="msg"></div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const BASE = location.pathname.startsWith("/playground") ? "/playground" : "";
+  const NEXT_URL = BASE + "/address/";
+
+  const HINT_URL = BASE + "/color/hint/";
+  const COUNTDOWN_START = 3;
+
+  /* ✅ 返回/状态标记 */
+  const SOLVED_KEY = "color_puzzle_solved_back_only_v1";
+  const LAST_NAV_KEY = "color_last_nav_v1";          // ✅ riddle 同源：hint / next
+  const ANSWER_CACHE_KEY = "color_inputs_cache_v1";  // ✅ riddle 同源：localStorage 输入缓存
+
+  /* ✅ NEW: 4 副图涂抹状态缓存（localStorage） */
+  const TILE_STATE_KEY = "color_tiles_state_v1";
+
+  // ✅ 10 个颜色（两行每行 5 个），包含 4 个正确色
+  const PALETTE_COLORS = [
+    // ✅ 正确色（来自 TILES.correctColor）
+    "#2A5A5E",
+    "#C62622",
+    "#E2C164",
+    "#9B857A",
+
+    // ✅ 错误色（从你原来的 16 色里选 6 个）
+    "#00E5FF",
+    "#7030A0",
+    "#FF4FA0",
+    "#0070C0",
+    "#39FF14",
+    "#FF8C00"
+  ];
+
+  const TILES = [
+    { key:"t3", bg:"bw.jpg",     mask:"skull_bw.png",    reveal:{ type:"P" }, correctColor:"#9B857A" },
+    { key:"t1", bg:"violin.jpg", mask:"violin_mask.png", reveal:{ type:"A" }, correctColor:"#2A5A5E" },
+    { key:"t2", bg:"avec.jpg",   mask:"avec_mask.png",   reveal:{ type:"U" }, correctColor:"#C62622" },
+    { key:"t4", bg:"lion.jpg",   mask:"lion_mask.png",   reveal:{ type:"L" }, correctColor:"#E2C164" },
+  ];
+
+  const P_BOX_REL = { x: 0.20, y: 0.08, w: 0.20, h: 0.30 };
+  const P_STROKE_FACTOR = 0.22;
+
+  const A_BOX_REL = { x: 0.62, y: 0.70, w: 0.26, h: 0.26 };
+  const A_STROKE_FACTOR = 0.20;
+
+  const U_BOX_REL = { x: 0.70, y: 0.32, w: 0.24, h: 0.22 };
+  const U_STROKE_FACTOR = 0.18;
+
+  const L_BOX_REL = { x: 0.61, y: 0.67, w: 0.10, h: 0.07 };
+  const L_STROKE_FACTOR = 0.137;
+
+  const BRUSH_RADIUS = 18;
+
+  const ANSWER = "paul";
+  const HINT_TEXT = "线索：四个图里被“挖出来”的字母，按顺序组成答案。";
+
+  /* =========================================================
+     ✅ NEW: 彻底禁用缩放：iOS pinch/双击/多指 + 桌面 Ctrl/⌘ 缩放兜底
+     - 单指滚动不受影响（只拦截多指触控）
+     ========================================================= */
+  (function hardDisableZoom(){
+    ["gesturestart","gesturechange","gestureend"].forEach(ev=>{
+      document.addEventListener(ev, (e)=>{ e.preventDefault(); }, { passive:false });
+    });
+
+    // 多指触控（pinch）兜底
+    document.addEventListener("touchstart", (e)=>{
+      if (e.touches && e.touches.length > 1) e.preventDefault();
+    }, { passive:false });
+
+    document.addEventListener("touchmove", (e)=>{
+      if (e.touches && e.touches.length > 1) e.preventDefault();
+    }, { passive:false });
+
+    // 双击缩放兜底
+    document.addEventListener("dblclick", (e)=>{ e.preventDefault(); }, { passive:false });
+
+    // 桌面 Ctrl/⌘ + 滚轮缩放
+    window.addEventListener("wheel", (e)=>{
+      if (e.ctrlKey || e.metaKey) e.preventDefault();
+    }, { passive:false });
+
+    // 桌面 Ctrl/⌘ + +/-/0 缩放
+    window.addEventListener("keydown", (e)=>{
+      const k = (e.key || "").toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && (k === "+" || k === "-" || k === "=" || k === "0")) {
+        e.preventDefault();
+      }
+    }, { passive:false });
+  })();
+
+  function dpr(){ return Math.max(1, Math.min(3, window.devicePixelRatio || 1)); }
+  function sameHex(a,b){
+    return (a||"").trim().toLowerCase() === (b||"").trim().toLowerCase();
+  }
+
+  const board = document.getElementById("board");
+  const palette = document.getElementById("palette");
+
+  const ans = document.getElementById("ans");
+  const btnHint = document.getElementById("btnHint");
+  const btnSubmit = document.getElementById("btnSubmit");
+  const hintBox = document.getElementById("hintBox");
+  const msg = document.getElementById("msg");
+
+  let locked = false;
+  let timer = null;
+  let btnTimer = null;
+
+  function setMsg(text, cls){
+    msg.className = "msg" + (cls ? (" " + cls) : "");
+    msg.textContent = text || "";
+  }
+
+  function setLocked(v){
+    locked = v;
+    btnSubmit.disabled = v;
+    btnHint.disabled = v;
+    ans.disabled = v;
+  }
+
+  const SUBMIT_TEXT = "提交答案";
+  function setBtnText(text, ms=900){
+    if (btnTimer){ clearTimeout(btnTimer); btnTimer=null; }
+
+    btnSubmit.textContent = text;
+    btnSubmit.classList.add("invert");
+    btnSubmit.disabled = true;
+
+    btnTimer = setTimeout(()=>{
+      btnSubmit.textContent = SUBMIT_TEXT;
+      btnSubmit.classList.remove("invert");
+      btnSubmit.disabled = false;
+      btnTimer = null;
+    }, ms);
+  }
+
+  /* =========================================================
+     ✅ riddle 同源：输入缓存（localStorage 随时保存 + pageshow 回填）
+     ========================================================= */
+  function readInputs(){
+    return { ANS: ans.value || "" };
+  }
+
+  function writeInputsToCache(){
+    try{ localStorage.setItem(ANSWER_CACHE_KEY, JSON.stringify(readInputs())); }catch(e){}
+  }
+
+  function restoreInputsFromCache(force=false){
+    try{
+      const raw = localStorage.getItem(ANSWER_CACHE_KEY);
+      if(!raw) return;
+      const d = JSON.parse(raw);
+      if(!d || typeof d !== "object") return;
+
+      if(typeof d.ANS === "string" && (force || ans.value === "")) ans.value = d.ANS;
+    }catch(e){}
+  }
+
+  // ✅ 任意输入都保存（同 riddle）
+  ans.addEventListener("input", () => { writeInputsToCache(); }, { passive:true });
+
+  /* =========================================================
+     ✅ NEW: 4 副图涂抹状态持久化（localStorage）
+     - 保存 overlay（显示层） + correctPaint（正确色涂抹层）
+     - 尺寸变化时按当前 canvas 尺寸拉伸恢复
+     ========================================================= */
+  function safeParseJSON(raw){
+    try{ return JSON.parse(raw); }catch(e){ return null; }
+  }
+
+  function loadTileStateMap(){
+    try{
+      const raw = localStorage.getItem(TILE_STATE_KEY);
+      const obj = safeParseJSON(raw);
+      return (obj && typeof obj === "object") ? obj : {};
+    }catch(e){
+      return {};
+    }
+  }
+
+  function saveTileStateMap(map){
+    try{
+      localStorage.setItem(TILE_STATE_KEY, JSON.stringify(map));
+    }catch(e){}
+  }
+
+  function setTileState(key, state){
+    const map = loadTileStateMap();
+    map[key] = state;
+    saveTileStateMap(map);
+  }
+
+  function getTileState(key){
+    const map = loadTileStateMap();
+    return map && map[key] ? map[key] : null;
+  }
+
+  // 先声明，下面 tiles 初始化后会覆盖引用
+  let tiles = [];
+
+  function saveAllTileStates(){
+    try{
+      tiles.forEach(t=>{
+        if (t && t.bgOK && t.maskOK) t.saveStateNow();
+      });
+    }catch(e){}
+  }
+
+  // ✅ BFCache 离开兜底保存一次（同 riddle）
+  window.addEventListener("pagehide", () => {
+    writeInputsToCache();
+    saveAllTileStates();
+  }, { passive:true });
+
+  // ✅ NEW: 页面隐藏也保存一次（某些环境 pagehide 不稳定）
+  document.addEventListener("visibilitychange", ()=>{
+    if (document.visibilityState === "hidden") saveAllTileStates();
+  }, { passive:true });
+
+  /* =========================================================
+     ✅ 选色锁定：未选色可滚动；选中色只涂抹
+     ========================================================= */
+  let CURRENT_COLOR = null;
+
+  function setPaintLocked(on){
+    board.classList.toggle("paintLocked", !!on);
+  }
+
+  function clearPaletteSelection(){
+    CURRENT_COLOR = null;
+    [...palette.children].forEach(x=>x.classList.remove("selected"));
+    setPaintLocked(false);
+  }
+
+  /* =========================================================
+     ✅ Circle 同款按钮反馈（按下黑 / 可取消 / 松手触发）
+     ========================================================= */
+  function isPointOnBtn(btn, x, y){
+    const el = document.elementFromPoint(x, y);
+    return el === btn || (el && btn.contains(el));
+  }
+
+  function attachPressAction(btn, onCommit, opts = {}){
+    const disableOnCommit = !!opts.disableOnCommit;
+    let armed = false;
+    let pid = null;
+
+    function setPressed(v){
+      if (btn.disabled) return;
+      btn.classList.toggle("invert", v);
+    }
+
+    function cancel(){
+      armed = false;
+      pid = null;
+      setPressed(false);
+      try{ btn.releasePointerCapture?.(pid); }catch(e){}
+    }
+
+    btn.addEventListener("pointerdown", (e)=>{
+      if (btn.disabled) return;
+      if (e.button !== undefined && e.button !== 0) return;
+
+      armed = true;
+      pid = e.pointerId;
+
+      setPressed(true);
+      try{ btn.setPointerCapture?.(pid); }catch(_){}
+
+      e.preventDefault();
+    }, { passive:false });
+
+    btn.addEventListener("pointermove", (e)=>{
+      if(!armed || e.pointerId !== pid) return;
+      setPressed(isPointOnBtn(btn, e.clientX, e.clientY));
+    });
+
+    btn.addEventListener("pointercancel", (e)=>{
+      if(!armed || e.pointerId !== pid) return;
+      cancel();
+    });
+
+    btn.addEventListener("pointerup", (e)=>{
+      if(!armed || e.pointerId !== pid) return;
+
+      const on = isPointOnBtn(btn, e.clientX, e.clientY);
+      armed = false;
+      pid = null;
+
+      if(on){
+        setPressed(true);
+        onCommit();
+
+        if(disableOnCommit){
+          // ✅ riddle 同源：离开去 hint 前标记 + 保存输入
+          try{ sessionStorage.setItem(LAST_NAV_KEY,"hint"); }catch(e){}
+          writeInputsToCache();
+
+          // ✅ NEW: 去 hint 前保存涂抹
+          saveAllTileStates();
+
+          btn.disabled = true;
+          btn.classList.add("invert");
+
+          requestAnimationFrame(()=>{
+            setTimeout(()=>{ location.href = HINT_URL; }, 0);
+          });
+          return;
+        }
+
+        setPressed(false);
+      }else{
+        setPressed(false);
+      }
+    });
+
+    btn.addEventListener("click", (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+    }, true);
+  }
+
+  /* ===== palette 渲染 ===== */
+  function renderGlobalPalette(){
+    palette.innerHTML = "";
+    PALETTE_COLORS.forEach(c=>{
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "swatch";
+      b.style.setProperty("--c", c);
+
+      b.addEventListener("click", ()=>{
+        CURRENT_COLOR = c;
+        [...palette.children].forEach(x=>x.classList.remove("selected"));
+        b.classList.add("selected");
+
+        // ✅ 选中颜色后：四宫格锁定为只涂抹（禁滚动）
+        setPaintLocked(true);
+      });
+
+      palette.appendChild(b);
+    });
+  }
+  renderGlobalPalette();
+
+  function makeCellDOM(tile, idx){
+    const cell = document.createElement("div");
+    cell.className = "cell";
+
+    const isLeft = (idx % 2 === 0);
+    const isTop  = (idx < 2);
+    if(isLeft) cell.classList.add("rline");
+    if(isTop)  cell.classList.add("bline");
+
+    cell.dataset.key = tile.key;
+    cell.innerHTML = `
+      <img class="bg" alt="" />
+      <canvas class="overlay"></canvas>
+      <div class="loading">资源加载中</div>
+    `;
+    return cell;
+  }
+
+  class ScratchTile{
+    constructor(tile, root){
+      this.tile = tile;
+      this.root = root;
+
+      this.img = root.querySelector("img.bg");
+      this.cv  = root.querySelector("canvas.overlay");
+      this.ctx = this.cv.getContext("2d", { alpha:true });
+
+      this.loading = root.querySelector(".loading");
+
+      this.down = false;
+      this.last = null;
+      this.pending = null;
+      this.rafId = 0;
+      this.needPost = false;
+
+      this.bgOK = false;
+      this.maskOK = false;
+
+      this.maskImg = new Image();
+      this.maskImg.decoding = "async";
+
+      this.whiteMaskCanvas = document.createElement("canvas");
+      this.whiteMaskCtx = this.whiteMaskCanvas.getContext("2d", { willReadFrequently:true });
+
+      this.correctPaintCanvas = document.createElement("canvas");
+      this.correctPaintCtx = this.correctPaintCanvas.getContext("2d");
+
+      this.letterMaskCanvas = document.createElement("canvas");
+      this.letterMaskCtx = this.letterMaskCanvas.getContext("2d");
+
+      this.interCanvas = document.createElement("canvas");
+      this.interCtx = this.interCanvas.getContext("2d");
+
+      this.bbox = null;
+
+      // ✅ NEW: 保存状态的 debounce
+      this._saveTimer = null;
+      this._dirty = false;
+
+      this.bind();
+
+      this.img.src = tile.bg;
+      this.maskImg.src = tile.mask;
+    }
+
+    isCorrect(c){ return sameHex(c, this.tile.correctColor); }
+
+    bind(){
+      this.img.addEventListener("load", ()=>{
+        this.bgOK = true;
+        if(this.maskOK) this.ready();
+      });
+      this.img.addEventListener("error", ()=>{
+        this.loading.textContent = `底图加载失败：${this.tile.bg}`;
+      });
+
+      this.maskImg.addEventListener("load", ()=>{
+        this.maskOK = true;
+        if(this.bgOK) this.ready();
+      });
+      this.maskImg.addEventListener("error", ()=>{
+        this.loading.textContent = `遮罩加载失败：${this.tile.mask}`;
+      });
+
+      /* ✅ 关键行为：
+         - 未选色：不拦截（允许滚动）
+         - 已选色：preventDefault + 捕获指针（只允许涂抹）
+      */
+      this.cv.addEventListener("pointerdown", (e)=>{
+        if(!CURRENT_COLOR) return;
+        e.preventDefault();
+        try{ this.cv.setPointerCapture(e.pointerId); }catch(_){}
+        this.down = true;
+        this.last = null;
+        this.pending = this.posFromPointer(e);
+        this.scheduleFrame();
+      }, {passive:false});
+
+      this.cv.addEventListener("pointermove", (e)=>{
+        if(!this.down) return;
+        e.preventDefault();
+        this.pending = this.posFromPointer(e);
+        this.scheduleFrame();
+      }, {passive:false});
+
+      const end = ()=>{
+        this.down = false;
+        this.last = null;
+        this.pending = null;
+        if(this.needPost) this.scheduleFrame();
+        // ✅ NEW: 抬手后也安排一次保存
+        this.scheduleSave();
+      };
+      this.cv.addEventListener("pointerup", end, {passive:true});
+      this.cv.addEventListener("pointercancel", end, {passive:true});
+    }
+
+    posFromPointer(e){
+      const r=this.cv.getBoundingClientRect();
+      return {x: e.clientX - r.left, y: e.clientY - r.top};
+    }
+
+    scheduleFrame(){
+      if(!this.rafId) this.rafId = requestAnimationFrame(()=>this.frame());
+    }
+
+    frame(){
+      this.rafId = 0;
+
+      if(this.down && this.pending){
+        if(!this.last){
+          this.last = this.pending;
+          this.dabOnly(this.last.x, this.last.y);
+        }else{
+          this.strokeOnly(this.last.x, this.last.y, this.pending.x, this.pending.y);
+          this.last = this.pending;
+        }
+        this.pending = null;
+      }
+
+      if(this.needPost) this.postProcess();
+    }
+
+    dabOnly(x,y){
+      const color = CURRENT_COLOR;
+
+      this.ctx.save();
+      this.ctx.globalCompositeOperation = "source-over";
+      this.ctx.fillStyle = color;
+      this.ctx.beginPath();
+      this.ctx.arc(x,y,BRUSH_RADIUS,0,Math.PI*2);
+      this.ctx.fill();
+      this.ctx.restore();
+
+      if(this.tile.reveal && this.isCorrect(color)){
+        this.correctPaintCtx.save();
+        this.correctPaintCtx.globalCompositeOperation = "source-over";
+        this.correctPaintCtx.fillStyle = "white";
+        this.correctPaintCtx.beginPath();
+        this.correctPaintCtx.arc(x,y,BRUSH_RADIUS,0,Math.PI*2);
+        this.correctPaintCtx.fill();
+        this.correctPaintCtx.restore();
+      }
+
+      this.needPost = true;
+
+      // ✅ NEW: 标记脏，准备保存
+      this._dirty = true;
+    }
+
+    strokeOnly(a,b,c,d){
+      const dx=c-a, dy=d-b;
+      const dist=Math.hypot(dx,dy);
+      const step=Math.max(2, BRUSH_RADIUS*0.5);
+      const n=Math.max(1, Math.ceil(dist/step));
+      for(let i=1;i<=n;i++){
+        const t=i/n;
+        this.dabOnly(a+dx*t, b+dy*t);
+      }
+    }
+
+    computeBBoxFromAlpha(imgData, w, h){
+      const data = imgData.data;
+      const step = 3;
+      let minx = w, miny = h, maxx = -1, maxy = -1;
+
+      for(let y=0; y<h; y+=step){
+        for(let x=0; x<w; x+=step){
+          const i = (y*w + x) * 4;
+          const a = data[i+3];
+          if(a > 0){
+            if(x < minx) minx = x;
+            if(y < miny) miny = y;
+            if(x > maxx) maxx = x;
+            if(y > maxy) maxy = y;
+          }
+        }
+      }
+      if(maxx < 0) return null;
+
+      const pad = Math.round(Math.min(w,h) * 0.01);
+      return {
+        minx: Math.max(0, minx - pad),
+        miny: Math.max(0, miny - pad),
+        maxx: Math.min(w-1, maxx + pad),
+        maxy: Math.min(h-1, maxy + pad),
+      };
+    }
+
+    buildUPath(cx, cy, s){
+      const u = new Path2D();
+      u.moveTo(cx + (-55)*s, cy + (-65)*s);
+      u.quadraticCurveTo(cx + (-58)*s, cy + (15)*s,  cx + (-28)*s, cy + (48)*s);
+      u.quadraticCurveTo(cx + (0)*s,   cy + (70)*s,  cx + (28)*s,  cy + (48)*s);
+      u.quadraticCurveTo(cx + (58)*s,  cy + (15)*s,  cx + (55)*s,  cy + (-65)*s);
+      return u;
+    }
+
+    buildPPath(cx, cy, s){
+      const p = new Path2D();
+      const x = cx + (-42)*s;
+      const top = cy + (-88)*s;
+      const mid = cy + (-6)*s;
+      const bottom = cy + (92)*s;
+
+      p.moveTo(x, bottom);
+      p.lineTo(x, top);
+
+      p.moveTo(x, top);
+      p.quadraticCurveTo(cx + (72)*s,  cy + (-92)*s,  cx + (72)*s,  cy + (-28)*s);
+      p.quadraticCurveTo(cx + (72)*s,  cy + (38)*s,   x,            mid);
+
+      return p;
+    }
+
+    buildAPath(cx, cy, s){
+      const a = new Path2D();
+      const topY = cy + (-90)*s;
+      const baseY = cy + (92)*s;
+      const leftX = cx + (-70)*s;
+      const rightX = cx + (70)*s;
+
+      a.moveTo(leftX, baseY);
+      a.lineTo(cx + (-6)*s, topY);
+
+      a.moveTo(rightX, baseY);
+      a.lineTo(cx + (6)*s, topY);
+
+      const barY = cy + (8)*s;
+      a.moveTo(cx + (-40)*s, barY);
+      a.lineTo(cx + (42)*s, barY);
+
+      return a;
+    }
+
+    buildLPath(cx, cy, s){
+      const l = new Path2D();
+      const topY = cy + (-92)*s;
+      const baseY = cy + (92)*s;
+      const leftX = cx + (-60)*s;
+      const rightX = cx + (60)*s;
+
+      l.moveTo(leftX, topY);
+      l.lineTo(leftX, baseY);
+
+      l.moveTo(leftX, baseY);
+      l.lineTo(rightX, baseY);
+
+      return l;
+    }
+
+    rebuildWhiteMask(){
+      const w = this.whiteMaskCanvas.width;
+      const h = this.whiteMaskCanvas.height;
+
+      this.whiteMaskCtx.setTransform(1,0,0,1,0,0);
+      this.whiteMaskCtx.clearRect(0,0,w,h);
+      this.whiteMaskCtx.drawImage(this.maskImg, 0, 0, w, h);
+
+      const imgData = this.whiteMaskCtx.getImageData(0,0,w,h);
+      const data = imgData.data;
+
+      for(let i=0;i<data.length;i+=4){
+        const r=data[i], g=data[i+1], b=data[i+2];
+        const lum=(r+g+b)/3;
+        data[i+3] = (lum >= 200) ? 255 : 0;
+      }
+
+      this.whiteMaskCtx.putImageData(imgData, 0, 0);
+      this.bbox = this.tile.reveal ? this.computeBBoxFromAlpha(imgData, w, h) : null;
+    }
+
+    rebuildLetterMask(){
+      const w = this.letterMaskCanvas.width;
+      const h = this.letterMaskCanvas.height;
+
+      this.letterMaskCtx.setTransform(1,0,0,1,0,0);
+      this.letterMaskCtx.clearRect(0,0,w,h);
+
+      if(!this.tile.reveal) return;
+
+      const bbox = this.bbox || { minx:0, miny:0, maxx:w-1, maxy:h-1 };
+      const bw = (bbox.maxx - bbox.minx);
+      const bh = (bbox.maxy - bbox.miny);
+
+      const t = this.tile.reveal.type;
+
+      let boxRel = U_BOX_REL;
+      let strokeFactor = U_STROKE_FACTOR;
+
+      if(t === "P"){ boxRel = P_BOX_REL; strokeFactor = P_STROKE_FACTOR; }
+      else if(t === "A"){ boxRel = A_BOX_REL; strokeFactor = A_STROKE_FACTOR; }
+      else if(t === "L"){ boxRel = L_BOX_REL; strokeFactor = L_STROKE_FACTOR; }
+
+      const bx = bbox.minx + bw * boxRel.x;
+      const by = bbox.miny + bh * boxRel.y;
+      const boxW = bw * boxRel.w;
+      const boxH = bh * boxRel.h;
+
+      const cx = bx + boxW * 0.50;
+      const cy = by + boxH * 0.52;
+
+      const s = Math.min(boxW, boxH) / 140;
+      const strokeW = Math.max(12, Math.round(Math.min(boxW, boxH) * strokeFactor));
+
+      const path = (t === "P") ? this.buildPPath(cx, cy, s)
+                : (t === "A") ? this.buildAPath(cx, cy, s)
+                : (t === "L") ? this.buildLPath(cx, cy, s)
+                              : this.buildUPath(cx, cy, s);
+
+      this.letterMaskCtx.save();
+      this.letterMaskCtx.strokeStyle = "white";
+      this.letterMaskCtx.lineWidth = strokeW;
+      this.letterMaskCtx.lineCap = "round";
+      this.letterMaskCtx.lineJoin = "round";
+      this.letterMaskCtx.stroke(path);
+      this.letterMaskCtx.restore();
+    }
+
+    resizeAll(){
+      const r = this.cv.getBoundingClientRect();
+      const s = dpr();
+
+      this.cv.width  = Math.round(r.width * s);
+      this.cv.height = Math.round(r.height * s);
+
+      this.ctx.setTransform(s,0,0,s,0,0);
+
+      this.whiteMaskCanvas.width  = this.cv.width;
+      this.whiteMaskCanvas.height = this.cv.height;
+
+      this.correctPaintCanvas.width  = this.cv.width;
+      this.correctPaintCanvas.height = this.cv.height;
+
+      this.letterMaskCanvas.width  = this.cv.width;
+      this.letterMaskCanvas.height = this.cv.height;
+
+      this.interCanvas.width  = this.cv.width;
+      this.interCanvas.height = this.cv.height;
+
+      this.correctPaintCtx.setTransform(1,0,0,1,0,0);
+      this.correctPaintCtx.clearRect(0,0,this.correctPaintCanvas.width, this.correctPaintCanvas.height);
+      this.correctPaintCtx.setTransform(s,0,0,s,0,0);
+
+      this.rebuildWhiteMask();
+      this.rebuildLetterMask();
+
+      this.needPost = true;
+      this.scheduleFrame();
+    }
+
+    applyWhiteMask(){
+      this.ctx.save();
+      this.ctx.setTransform(1,0,0,1,0,0);
+      this.ctx.globalCompositeOperation = "destination-in";
+      this.ctx.drawImage(this.whiteMaskCanvas, 0, 0);
+      this.ctx.restore();
+    }
+
+    punchLetterByPaintedArea(){
+      if(!this.tile.reveal) return;
+
+      this.interCtx.setTransform(1,0,0,1,0,0);
+      this.interCtx.clearRect(0,0,this.interCanvas.width, this.interCanvas.height);
+
+      this.interCtx.globalCompositeOperation = "source-over";
+      this.interCtx.drawImage(this.correctPaintCanvas, 0, 0);
+
+      this.interCtx.globalCompositeOperation = "destination-in";
+      this.interCtx.drawImage(this.letterMaskCanvas, 0, 0);
+
+      this.ctx.save();
+      this.ctx.setTransform(1,0,0,1,0,0);
+      this.ctx.globalCompositeOperation = "destination-out";
+      this.ctx.drawImage(this.interCanvas, 0, 0);
+      this.ctx.restore();
+    }
+
+    postProcess(){
+      this.applyWhiteMask();
+      this.punchLetterByPaintedArea();
+      this.needPost = false;
+
+      // ✅ NEW: 只要涂抹过就 debounce 保存
+      if (this._dirty) this.scheduleSave();
+    }
+
+    /* ✅ NEW: 导出/保存/恢复状态 */
+    exportState(){
+      return {
+        w: this.cv.width,
+        h: this.cv.height,
+        overlay: this.cv.toDataURL("image/png"),
+        correct: this.correctPaintCanvas.toDataURL("image/png"),
+        ts: Date.now()
+      };
+    }
+
+    saveStateNow(){
+      try{
+        const st = this.exportState();
+        setTileState(this.tile.key, st);
+        this._dirty = false;
+      }catch(e){}
+    }
+
+    scheduleSave(){
+      if (this._saveTimer) clearTimeout(this._saveTimer);
+      this._saveTimer = setTimeout(()=>{
+        this._saveTimer = null;
+        this.saveStateNow();
+      }, 220);
+    }
+
+    restoreStateIfAny(){
+      const st = getTileState(this.tile.key);
+      if(!st || !st.overlay) return;
+
+      const w = this.cv.width;
+      const h = this.cv.height;
+
+      const loadImg = (src) => new Promise((resolve, reject)=>{
+        const im = new Image();
+        im.decoding = "async";
+        im.onload = ()=>resolve(im);
+        im.onerror = reject;
+        im.src = src;
+      });
+
+      Promise.all([
+        loadImg(st.overlay),
+        st.correct ? loadImg(st.correct) : Promise.resolve(null)
+      ]).then(([ovImg, cpImg])=>{
+        // 1) overlay 恢复到当前 canvas（按当前尺寸拉伸）
+        this.ctx.save();
+        this.ctx.setTransform(1,0,0,1,0,0);
+        this.ctx.globalCompositeOperation = "source-over";
+        this.ctx.clearRect(0,0,w,h);
+        this.ctx.drawImage(ovImg, 0,0, w,h);
+        this.ctx.restore();
+
+        // 2) correctPaint 恢复（用于字母挖空逻辑）
+        if (cpImg){
+          this.correctPaintCtx.save();
+          this.correctPaintCtx.setTransform(1,0,0,1,0,0);
+          this.correctPaintCtx.globalCompositeOperation = "source-over";
+          this.correctPaintCtx.clearRect(0,0,w,h);
+          this.correctPaintCtx.drawImage(cpImg, 0,0, w,h);
+          this.correctPaintCtx.restore();
+        }
+
+        // 3) 重新跑 postProcess，确保 mask / punch 与当前尺寸一致
+        this.needPost = true;
+        this.scheduleFrame();
+      }).catch(()=>{});
+    }
+
+    ready(){
+      this.resizeAll();
+      this.loading.classList.add("hide");
+
+      // ✅ NEW: ready 后恢复涂抹状态
+      this.restoreStateIfAny();
+    }
+  }
+
+  function makeTiles(){
+    const arr = [];
+    TILES.forEach((t, idx)=>{
+      const cell = makeCellDOM(t, idx);
+      board.appendChild(cell);
+      arr.push(new ScratchTile(t, cell));
+    });
+    return arr;
+  }
+
+  tiles = makeTiles();
+
+  window.addEventListener("resize", ()=>{
+    tiles.forEach(t=>{
+      if(t.bgOK && t.maskOK) t.resizeAll();
+    });
+  });
+
+  function normalize4(s){
+    return (s || "")
+      .toString()
+      .trim()
+      .replace(/\s+/g, "")
+      .slice(0, 4)
+      .toLowerCase();
+  }
+
+  // ✅ 你原来的过滤逻辑保留；并且仍会触发上面的 input 保存
+  ans.addEventListener("input", ()=>{
+    ans.value = ans.value.replace(/[^a-zA-Z]/g, "").slice(0,4);
+  });
+
+  function isCorrect(){
+    const v = normalize4(ans.value);
+    return v.length === 4 && v === ANSWER;
+  }
+
+  function doSubmit(){
+    if(locked) return;
+
+    // ✅ riddle 同源：提交也保存一次
+    writeInputsToCache();
+
+    if(isCorrect()){
+      setLocked(true);
+
+      // ✅ riddle 同源：提交正确->下一题，标记 next（用于返回显示“答案已确认”）
+      try{
+        sessionStorage.setItem(SOLVED_KEY, "1");
+        sessionStorage.setItem(LAST_NAV_KEY, "next");
+      }catch(e){}
+
+      // ✅ NEW: 去下一页前保存涂抹状态
+      saveAllTileStates();
+
+      let t = COUNTDOWN_START;
+      setMsg(`答案正确，即将进入下一题（${t}）`, "ok");
+
+      timer = setInterval(()=>{
+        t--;
+        if(t > 0){
+          setMsg(`答案正确，即将进入下一题（${t}）`, "ok");
+        }else{
+          clearInterval(timer);
+          location.href = NEXT_URL;
+        }
+      }, 1000);
+    }else{
+      setMsg("", "");
+      setBtnText("错了，再试一次", 900);
+    }
+  }
+
+  attachPressAction(btnHint, () => {
+    if(locked) return;
+    // ✅ riddle 同源：去 hint 前保存 + 标记在 attachPressAction 的 disableOnCommit 里做
+  }, { disableOnCommit:true });
+
+  attachPressAction(btnSubmit, () => {
+    doSubmit();
+  }, { disableOnCommit:false });
+
+  function getNavType() {
+    try {
+      const nav = performance.getEntriesByType("navigation");
+      if (nav && nav[0] && nav[0].type) return nav[0].type;
+    } catch {}
+    if (performance && performance.navigation) {
+      const t = performance.navigation.type;
+      if (t === 1) return "reload";
+      if (t === 2) return "back_forward";
+      return "navigate";
+    }
+    return "navigate";
+  }
+
+  /* ✅ 从提示页返回：重置“锁定/提示文案/按钮状态”等，但不清空输入；输入靠缓存回填（riddle 同源） */
+  function resetToInitialUI(){
+    if(timer){ clearInterval(timer); timer = null; }
+    if(btnTimer){ clearTimeout(btnTimer); btnTimer = null; }
+
+    locked = false;
+
+    setLocked(false);
+    setMsg("", "");
+    btnSubmit.textContent = SUBMIT_TEXT;
+
+    // buttons：恢复可用态
+    btnHint.disabled = false;
+    btnSubmit.disabled = false;
+    btnHint.classList.remove("invert");
+    btnSubmit.classList.remove("invert");
+    btnHint.style.pointerEvents = "";
+    btnSubmit.style.pointerEvents = "";
+    btnHint.blur?.();
+    btnSubmit.blur?.();
+
+    // ✅ 这里保持你原行为：返回时“未选色可滚动”
+    clearPaletteSelection();
+  }
+
+  /* =========================================================
+     ✅ pageshow：完全按 riddle 分流 + 强制回填
+     ========================================================= */
+  window.addEventListener("pageshow", (e) => {
+    const navType = getNavType();
+    const isBack = (e.persisted || navType === "back_forward");
+
+    // ✅ 不管是不是 back，都先轻量回填一次（不覆盖已有输入）
+    restoreInputsFromCache(false);
+
+    if(!isBack) return;
+
+    // ✅ BFCache 返回：延迟一拍强制回填，避免“返回后被浏览器清空”
+    requestAnimationFrame(()=>{
+      setTimeout(()=> restoreInputsFromCache(true), 0);
+    });
+
+    let last = "";
+    try{ last = sessionStorage.getItem(LAST_NAV_KEY) || ""; }catch(e){}
+
+    // 1) ✅ 从提示页返回：恢复初始交互（但保留输入）
+    if(last === "hint"){
+      try{ sessionStorage.removeItem(LAST_NAV_KEY); }catch(e){}
+      resetToInitialUI();
+      requestAnimationFrame(()=> setTimeout(()=> restoreInputsFromCache(true), 0));
+      return;
+    }
+
+    // 2) ✅ 从下一页返回：显示“答案已确认”，锁提示，解锁提交+输入，并保留输入
+    if(sessionStorage.getItem(SOLVED_KEY) === "1"){
+      // 解锁（否则 doSubmit 里的 locked 会挡）
+      setLocked(false);
+
+      setMsg("答案已确认", "ok");
+
+      btnHint.disabled = false;
+      btnHint.classList.remove("invert");
+      btnHint.style.pointerEvents = "";
+
+      btnHint.blur?.();
+
+      btnSubmit.disabled = false;
+      btnSubmit.classList.remove("invert");
+      btnSubmit.style.pointerEvents = "";
+      btnSubmit.blur?.();
+
+      ans.disabled = false;
+
+      // 保持“未选色可滚动/选色才锁涂抹”的原规则
+      setPaintLocked(false);
+
+      requestAnimationFrame(()=> setTimeout(()=> restoreInputsFromCache(true), 0));
+      return;
+    }
+  });
+
+  /* 初次进入/刷新：清掉返回标记（同 riddle），但不清 localStorage 缓存 */
+  (function clearSolvedOnFreshNav(){
+    const t = getNavType();
+    if(t === "navigate" || t === "reload"){
+      try{
+        sessionStorage.removeItem(SOLVED_KEY);
+        sessionStorage.removeItem(LAST_NAV_KEY);
+      }catch(e){}
+    }
+  })();
+
+  hintBox.textContent = HINT_TEXT;
+
+  // ✅ 初始：回填输入（不覆盖已有）
+  restoreInputsFromCache(false);
+
+  // ✅ 初始确保“未选色可滚动”
+  clearPaletteSelection();
+})();
+</script>
+</body>
+</html>
