@@ -13,11 +13,12 @@
       --bg:#fff;
       --text:#111;
 
-      --fs-body: 18px;
-      --lh-body: 1.6;
-
       --hint-fs:18px;
       --hint-lh:1.6;
+
+      /* 与正文说明同一套字号行高 */
+      --fs-body: var(--hint-fs);
+      --lh-body: var(--hint-lh);
 
       --swatch: clamp(24px, 7.2vw, 34px);
       --swatch-gap: clamp(8px, 2.4vw, 12px);
@@ -52,7 +53,7 @@
     /* ✅ 进一步阻止双击缩放（不影响点击） */
     html, body{ touch-action: manipulation; }
 
-    .green{ color:#2E7D32; }
+    .green{ color:#2E7D32; font-weight:700; }
 
     body{
       margin:0;
@@ -61,6 +62,7 @@
       font-family:system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
       font-size:var(--fs-body);
       line-height:var(--lh-body);
+      font-weight:700;
       -webkit-text-size-adjust:100%;
     }
 
@@ -83,7 +85,6 @@
     .board{
       width:100%;
       background:#fff;
-      border: var(--frame) solid #fff;
       display:flex;
       flex-direction: column;
       gap: var(--tile-v-gap);
@@ -385,6 +386,10 @@
 
       <div class="hintBox" id="hintBox"></div>
       <div class="msg" id="msg"></div>
+      <!-- 临时：重置所有图的涂抹；正式上线前可删 -->
+      <div class="actions">
+        <button class="uiBtn" id="btnResetColors" type="button">重置颜色</button>
+      </div>
     </div>
   </div>
 
@@ -998,23 +1003,34 @@
     }
 
     /**
-     * 小写「i」：竖笔 + 上方圆点（tittle），尺寸相对 x 更小。
+     * 小写「i」竖笔（仅竖线；圆点见 getIDotGeometry，单独 fill）。
      * @param {number} cx
      * @param {number} cy
      * @param {number} s
      * @returns {Path2D}
      */
-    buildIPath(cx, cy, s){
+    buildIStemPath(cx, cy, s){
       const p = new Path2D();
-      const stemTop = cy + (-48) * s;
+      const stemTop = cy + (-38) * s;
       const stemBot = cy + (52) * s;
       p.moveTo(cx, stemTop);
       p.lineTo(cx, stemBot);
-      const dotCy = cy + (-62) * s;
-      const dotR = 7 * s;
-      p.moveTo(cx + dotR, dotCy);
-      p.arc(cx, dotCy, dotR, 0, Math.PI * 2, false);
       return p;
+    }
+
+    /**
+     * 小写「i」上圆点（实心填充）；与竖笔间距加大，避免与 stroke 圆帽连成一片。
+     * @param {number} cx
+     * @param {number} cy
+     * @param {number} s
+     * @returns {{ dotCx: number, dotCy: number, dotR: number }}
+     */
+    getIDotGeometry(cx, cy, s){
+      return {
+        dotCx: cx,
+        dotCy: cy + (-82) * s,
+        dotR: 7 * s,
+      };
     }
 
     /**
@@ -1094,14 +1110,24 @@
       const s = Math.min(boxW, boxH) / 140 * sizeFactor;
       const strokeW = Math.max(t === "I" ? 10 : 14, Math.round(Math.min(boxW, boxH) * strokeFactor));
 
-      const path = (t === "I") ? this.buildIPath(cx, cy, s) : this.buildXPath(cx, cy, s);
-
       this.letterMaskCtx.save();
       this.letterMaskCtx.strokeStyle = "white";
       this.letterMaskCtx.lineWidth = strokeW;
       this.letterMaskCtx.lineCap = "round";
       this.letterMaskCtx.lineJoin = "round";
-      this.letterMaskCtx.stroke(path);
+
+      if(t === "I"){
+        const stemPath = this.buildIStemPath(cx, cy, s);
+        const { dotCx, dotCy, dotR } = this.getIDotGeometry(cx, cy, s);
+        this.letterMaskCtx.stroke(stemPath);
+        this.letterMaskCtx.beginPath();
+        this.letterMaskCtx.arc(dotCx, dotCy, dotR, 0, Math.PI * 2);
+        this.letterMaskCtx.fillStyle = "white";
+        this.letterMaskCtx.fill();
+      }else{
+        const path = this.buildXPath(cx, cy, s);
+        this.letterMaskCtx.stroke(path);
+      }
       this.letterMaskCtx.restore();
     }
 
@@ -1198,6 +1224,34 @@
         this._saveTimer = null;
         this.saveStateNow();
       }, 220);
+    }
+
+    /**
+     * 清空主 overlay 与正确色层，并刷新蒙版合成（用于「重置颜色」）。
+     */
+    clearPaintedState(){
+      if(this._saveTimer){
+        clearTimeout(this._saveTimer);
+        this._saveTimer = null;
+      }
+      const w = this.cv.width;
+      const h = this.cv.height;
+      if(w < 1 || h < 1) return;
+
+      this.ctx.save();
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.ctx.globalCompositeOperation = "source-over";
+      this.ctx.clearRect(0, 0, w, h);
+      this.ctx.restore();
+
+      this.correctPaintCtx.save();
+      this.correctPaintCtx.setTransform(1, 0, 0, 1, 0, 0);
+      this.correctPaintCtx.clearRect(0, 0, this.correctPaintCanvas.width, this.correctPaintCanvas.height);
+      this.correctPaintCtx.restore();
+
+      this._dirty = false;
+      this.needPost = true;
+      this.scheduleFrame();
     }
 
     restoreStateIfAny(){
@@ -1333,6 +1387,15 @@
 
   attachPressAction(btnSubmit, () => {
     doSubmit();
+  }, { disableOnCommit:false });
+
+  const btnResetColors = document.getElementById("btnResetColors");
+  attachPressAction(btnResetColors, () => {
+    saveTileStateMap({});
+    tiles.forEach((tile)=>{
+      if(tile && typeof tile.clearPaintedState === "function") tile.clearPaintedState();
+    });
+    clearPaletteSelection();
   }, { disableOnCommit:false });
 
   function getNavType() {
