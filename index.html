@@ -94,14 +94,14 @@
 
     /**
      * 每组顺序：文字 → 1280×960 横图（4:3）→ 调色盘；
-     * 组内三项间距与组间间距均为 --tile-v-gap。
+     * 文字到图片固定 18px；图片到调色盘维持 --tile-v-gap。
      */
     .tileRow{
       width: 100%;
       display: flex;
       flex-direction: column;
       align-items: stretch;
-      gap: var(--tile-v-gap);
+      gap: 18px;
     }
 
     /** 与页首 .title 同排版 */
@@ -117,6 +117,10 @@
     .tileRow .paletteWrap{
       margin-top: 0;
       padding-top: 0;
+    }
+
+    .tileRow .cell{
+      margin-bottom: calc(var(--tile-v-gap) - 18px);
     }
 
     .cell{
