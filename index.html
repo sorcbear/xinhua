@@ -76,16 +76,15 @@
       white-space:pre-wrap;
     }
 
-    /* ✅ 四宫格边框：纯白 */
+    /* ✅ 画板：自上而下四格，底图按原始比例宽度铺满 */
     .board{
       width:100%;
       background:#fff;
       border: var(--frame) solid #fff;
-      display:grid;
-      grid-template-columns: 1fr 1fr;
+      display:flex;
+      flex-direction: column;
       gap: 0;
-      align-items:start;
-      align-content:start;
+      align-items: stretch;
       overflow:hidden;
     }
 
@@ -97,27 +96,34 @@
       -webkit-user-select:none;
 
       min-width:0;
-      aspect-ratio: 1 / 1;
+      width: 100%;
 
       font-size:0;
       line-height:0;
     }
 
-    /* ✅ 分隔线：纯白 */
-    .cell.rline{ border-right: var(--frame) solid #fff; }
-    .cell.bline{ border-bottom: var(--frame) solid #fff; }
-
-    /* ✅ 底图 + 蒙版：统一外扩 2px（稳定值） */
-    .cell img,
-    canvas.overlay{
-      position:absolute;
-      inset:-2px;
-      width:calc(100% + 4px);
-      height:calc(100% + 4px);
-      display:block;
+    .cellStack{
+      position: relative;
+      width: 100%;
+      display: block;
     }
 
-    .cell img{ object-fit:cover; }
+    .cellStack img.bg{
+      position: relative;
+      width: 100%;
+      height: auto;
+      display: block;
+      vertical-align: top;
+    }
+
+    .cellStack canvas.overlay{
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
 
     /* =========================================================
        ✅ 关键：未选颜色可滚动；选中颜色后锁定为只涂抹
@@ -329,7 +335,7 @@
 
     <div class="answerBlock">
       <div class="answerRow">
-        <div class="answerLabel">请依次输入隐藏的字母（不用区分大小写）：</div>
+        <div class="answerLabel">请依次输入隐藏的字符（不用区分大小写）：</div>
         <input id="ans" class="ansInput" type="text" inputmode="latin" autocomplete="off" autocapitalize="none"
                spellcheck="false" maxlength="4" />
       </div>
@@ -358,7 +364,7 @@
   const ANSWER_CACHE_KEY = "color_inputs_cache_v1";  // ✅ riddle 同源：localStorage 输入缓存
 
   /* ✅ NEW: 4 副图涂抹状态缓存（localStorage） */
-  const TILE_STATE_KEY = "color_tiles_state_v1";
+  const TILE_STATE_KEY = "color_tiles_state_v2";
 
   // ✅ 10 个颜色（两行每行 5 个），包含 4 个正确色
   const PALETTE_COLORS = [
@@ -377,29 +383,25 @@
     "#FF8C00"
   ];
 
+  /**
+   * 自上而下四块；每块可单独改 bg / mask 文件名。
+   * 当前目录仅有 blue.png / blue_mask.png 时四块共用同一资源，替换为不同文件即可。
+   */
   const TILES = [
-    { key:"t3", bg:"bw.jpg",     mask:"skull_bw.png",    reveal:{ type:"P" }, correctColor:"#9B857A" },
-    { key:"t1", bg:"violin.jpg", mask:"violin_mask.png", reveal:{ type:"A" }, correctColor:"#2A5A5E" },
-    { key:"t2", bg:"avec.jpg",   mask:"avec_mask.png",   reveal:{ type:"U" }, correctColor:"#C62622" },
-    { key:"t4", bg:"lion.jpg",   mask:"lion_mask.png",   reveal:{ type:"L" }, correctColor:"#E2C164" },
+    { key: "t1", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#2A5A5E" },
+    { key: "t2", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#C62622" },
+    { key: "t3", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#E2C164" },
+    { key: "t4", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#9B857A" },
   ];
 
-  const P_BOX_REL = { x: 0.20, y: 0.08, w: 0.20, h: 0.30 };
-  const P_STROKE_FACTOR = 0.22;
-
-  const A_BOX_REL = { x: 0.62, y: 0.70, w: 0.26, h: 0.26 };
-  const A_STROKE_FACTOR = 0.20;
-
-  const U_BOX_REL = { x: 0.70, y: 0.32, w: 0.24, h: 0.22 };
-  const U_STROKE_FACTOR = 0.18;
-
-  const L_BOX_REL = { x: 0.61, y: 0.67, w: 0.10, h: 0.07 };
-  const L_STROKE_FACTOR = 0.137;
+  /** 在可涂区域内的手写「x」占位框（相对 bbox），可按需在单块 tile.reveal 上覆盖 boxRel / strokeFactor */
+  const X_BOX_REL = { x: 0.28, y: 0.28, w: 0.44, h: 0.44 };
+  const X_STROKE_FACTOR = 0.19;
 
   const BRUSH_RADIUS = 18;
 
-  const ANSWER = "paul";
-  const HINT_TEXT = "线索：四个图里被“挖出来”的字母，按顺序组成答案。";
+  const ANSWER = "xxxx";
+  const HINT_TEXT = "线索：四个图里被“挖出来”的字符，按顺序组成答案。";
 
   /* =========================================================
      ✅ NEW: 彻底禁用缩放：iOS pinch/双击/多指 + 桌面 Ctrl/⌘ 缩放兜底
@@ -682,7 +684,7 @@
         [...palette.children].forEach(x=>x.classList.remove("selected"));
         b.classList.add("selected");
 
-        // ✅ 选中颜色后：四宫格锁定为只涂抹（禁滚动）
+        // ✅ 选中颜色后：画板锁定为只涂抹（禁滚动）
         setPaintLocked(true);
       });
 
@@ -691,19 +693,19 @@
   }
   renderGlobalPalette();
 
-  function makeCellDOM(tile, idx){
+  /**
+   * @param {{ key: string }} tile
+   * @returns {HTMLDivElement}
+   */
+  function makeCellDOM(tile){
     const cell = document.createElement("div");
     cell.className = "cell";
-
-    const isLeft = (idx % 2 === 0);
-    const isTop  = (idx < 2);
-    if(isLeft) cell.classList.add("rline");
-    if(isTop)  cell.classList.add("bline");
-
     cell.dataset.key = tile.key;
     cell.innerHTML = `
-      <img class="bg" alt="" />
-      <canvas class="overlay"></canvas>
+      <div class="cellStack">
+        <img class="bg" alt="" />
+        <canvas class="overlay"></canvas>
+      </div>
       <div class="loading">资源加载中</div>
     `;
     return cell;
@@ -714,8 +716,8 @@
       this.tile = tile;
       this.root = root;
 
-      this.img = root.querySelector("img.bg");
-      this.cv  = root.querySelector("canvas.overlay");
+      this.img = root.querySelector(".cellStack img.bg");
+      this.cv  = root.querySelector(".cellStack canvas.overlay");
       this.ctx = this.cv.getContext("2d", { alpha:true });
 
       this.loading = root.querySelector(".loading");
@@ -900,68 +902,25 @@
       };
     }
 
-    buildUPath(cx, cy, s){
-      const u = new Path2D();
-      u.moveTo(cx + (-55)*s, cy + (-65)*s);
-      u.quadraticCurveTo(cx + (-58)*s, cy + (15)*s,  cx + (-28)*s, cy + (48)*s);
-      u.quadraticCurveTo(cx + (0)*s,   cy + (70)*s,  cx + (28)*s,  cy + (48)*s);
-      u.quadraticCurveTo(cx + (58)*s,  cy + (15)*s,  cx + (55)*s,  cy + (-65)*s);
-      return u;
-    }
-
-    buildPPath(cx, cy, s){
+    /**
+     * 手写风格「x」：两笔交叉（Path2D 可一次 stroke）。
+     * @param {number} cx
+     * @param {number} cy
+     * @param {number} s
+     * @returns {Path2D}
+     */
+    buildXPath(cx, cy, s){
       const p = new Path2D();
-      const x = cx + (-42)*s;
-      const top = cy + (-88)*s;
-      const mid = cy + (-6)*s;
-      const bottom = cy + (92)*s;
-
-      p.moveTo(x, bottom);
-      p.lineTo(x, top);
-
-      p.moveTo(x, top);
-      p.quadraticCurveTo(cx + (72)*s,  cy + (-92)*s,  cx + (72)*s,  cy + (-28)*s);
-      p.quadraticCurveTo(cx + (72)*s,  cy + (38)*s,   x,            mid);
-
+      p.moveTo(cx + (-50) * s, cy + (-54) * s);
+      p.quadraticCurveTo(cx + (-18) * s, cy + (-8) * s, cx + (48) * s, cy + (56) * s);
+      p.moveTo(cx + (50) * s, cy + (-52) * s);
+      p.quadraticCurveTo(cx + (20) * s, cy + (6) * s, cx + (-48) * s, cy + (54) * s);
       return p;
     }
 
-    buildAPath(cx, cy, s){
-      const a = new Path2D();
-      const topY = cy + (-90)*s;
-      const baseY = cy + (92)*s;
-      const leftX = cx + (-70)*s;
-      const rightX = cx + (70)*s;
-
-      a.moveTo(leftX, baseY);
-      a.lineTo(cx + (-6)*s, topY);
-
-      a.moveTo(rightX, baseY);
-      a.lineTo(cx + (6)*s, topY);
-
-      const barY = cy + (8)*s;
-      a.moveTo(cx + (-40)*s, barY);
-      a.lineTo(cx + (42)*s, barY);
-
-      return a;
-    }
-
-    buildLPath(cx, cy, s){
-      const l = new Path2D();
-      const topY = cy + (-92)*s;
-      const baseY = cy + (92)*s;
-      const leftX = cx + (-60)*s;
-      const rightX = cx + (60)*s;
-
-      l.moveTo(leftX, topY);
-      l.lineTo(leftX, baseY);
-
-      l.moveTo(leftX, baseY);
-      l.lineTo(rightX, baseY);
-
-      return l;
-    }
-
+    /**
+     * 根据蒙版图生成涂抹裁剪用 alpha：白=禁涂、黑=可涂；并计算可涂区域 bbox 供字母定位。
+     */
     rebuildWhiteMask(){
       const w = this.whiteMaskCanvas.width;
       const h = this.whiteMaskCanvas.height;
@@ -973,16 +932,20 @@
       const imgData = this.whiteMaskCtx.getImageData(0,0,w,h);
       const data = imgData.data;
 
+      /** 白=禁涂（alpha 0），黑=可涂（alpha 255） */
       for(let i=0;i<data.length;i+=4){
         const r=data[i], g=data[i+1], b=data[i+2];
         const lum=(r+g+b)/3;
-        data[i+3] = (lum >= 200) ? 255 : 0;
+        data[i+3] = (lum >= 200) ? 0 : 255;
       }
 
       this.whiteMaskCtx.putImageData(imgData, 0, 0);
       this.bbox = this.tile.reveal ? this.computeBBoxFromAlpha(imgData, w, h) : null;
     }
 
+    /**
+     * 在可涂区域 bbox 内绘制手写「x」笔画蒙版（与 correctPaint 做挖空）。
+     */
     rebuildLetterMask(){
       const w = this.letterMaskCanvas.width;
       const h = this.letterMaskCanvas.height;
@@ -996,19 +959,13 @@
       const bw = (bbox.maxx - bbox.minx);
       const bh = (bbox.maxy - bbox.miny);
 
-      const t = this.tile.reveal.type;
+      const rel = this.tile.reveal.boxRel || X_BOX_REL;
+      const strokeFactor = this.tile.reveal.strokeFactor != null ? this.tile.reveal.strokeFactor : X_STROKE_FACTOR;
 
-      let boxRel = U_BOX_REL;
-      let strokeFactor = U_STROKE_FACTOR;
-
-      if(t === "P"){ boxRel = P_BOX_REL; strokeFactor = P_STROKE_FACTOR; }
-      else if(t === "A"){ boxRel = A_BOX_REL; strokeFactor = A_STROKE_FACTOR; }
-      else if(t === "L"){ boxRel = L_BOX_REL; strokeFactor = L_STROKE_FACTOR; }
-
-      const bx = bbox.minx + bw * boxRel.x;
-      const by = bbox.miny + bh * boxRel.y;
-      const boxW = bw * boxRel.w;
-      const boxH = bh * boxRel.h;
+      const bx = bbox.minx + bw * rel.x;
+      const by = bbox.miny + bh * rel.y;
+      const boxW = bw * rel.w;
+      const boxH = bh * rel.h;
 
       const cx = bx + boxW * 0.50;
       const cy = by + boxH * 0.52;
@@ -1016,10 +973,7 @@
       const s = Math.min(boxW, boxH) / 140;
       const strokeW = Math.max(12, Math.round(Math.min(boxW, boxH) * strokeFactor));
 
-      const path = (t === "P") ? this.buildPPath(cx, cy, s)
-                : (t === "A") ? this.buildAPath(cx, cy, s)
-                : (t === "L") ? this.buildLPath(cx, cy, s)
-                              : this.buildUPath(cx, cy, s);
+      const path = this.buildXPath(cx, cy, s);
 
       this.letterMaskCtx.save();
       this.letterMaskCtx.strokeStyle = "white";
@@ -1179,8 +1133,8 @@
 
   function makeTiles(){
     const arr = [];
-    TILES.forEach((t, idx)=>{
-      const cell = makeCellDOM(t, idx);
+    TILES.forEach((t)=>{
+      const cell = makeCellDOM(t);
       board.appendChild(cell);
       arr.push(new ScratchTile(t, cell));
     });
