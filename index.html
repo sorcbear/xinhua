@@ -395,10 +395,10 @@
   const ANSWER_CACHE_KEY = "color_inputs_cache_v1";  // ✅ riddle 同源：localStorage 输入缓存
 
   /* ✅ NEW: 4 副图涂抹状态缓存（localStorage） */
-  const TILE_STATE_KEY = "color_tiles_state_v3";
+  const TILE_STATE_KEY = "color_tiles_state_v4";
 
   /**
-   * 10 色两行×五列。谜题唯一正确色为第二行第三格 `#0070C0`（与 TILES.correctColor 一致）；其余为干扰色。
+   * 10 色两行×五列。各块正确色见 `TILES[].correctColor`（t1/t3/t4 为第二行第三格蓝 `#0070C0`；t2 为第一行第一格 `#2A5A5E`）。
    */
   const PALETTE_COLORS = [
     "#2A5A5E",
@@ -422,7 +422,7 @@
    */
   const TILES = [
     { key: "t1", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#0070C0" },
-    { key: "t2", bg: "green.png", mask: "green_mask.png", reveal: { type: "I" }, correctColor: "#0070C0" },
+    { key: "t2", bg: "green.png", mask: "green_mask.png", reveal: { type: "I" }, correctColor: "#2A5A5E" },
     { key: "t3", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#0070C0" },
     { key: "t4", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#0070C0" },
   ];
@@ -991,7 +991,7 @@
     }
 
     /**
-     * 手写风格「i」：竖笔 + 上方一点，尺寸相对 x 更小。
+     * 小写「i」：竖笔 + 上方圆点（tittle），尺寸相对 x 更小。
      * @param {number} cx
      * @param {number} cy
      * @param {number} s
@@ -999,10 +999,14 @@
      */
     buildIPath(cx, cy, s){
       const p = new Path2D();
-      p.moveTo(cx + (-4) * s, cy + (-24) * s);
-      p.quadraticCurveTo(cx + (0) * s, cy + (24) * s, cx + (2) * s, cy + (62) * s);
-      p.moveTo(cx + (0) * s, cy + (-62) * s);
-      p.lineTo(cx + (0) * s, cy + (-62) * s);
+      const stemTop = cy + (-48) * s;
+      const stemBot = cy + (52) * s;
+      p.moveTo(cx, stemTop);
+      p.lineTo(cx, stemBot);
+      const dotCy = cy + (-62) * s;
+      const dotR = 7 * s;
+      p.moveTo(cx + dotR, dotCy);
+      p.arc(cx, dotCy, dotR, 0, Math.PI * 2, false);
       return p;
     }
 
