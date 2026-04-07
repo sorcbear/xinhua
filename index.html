@@ -41,6 +41,9 @@
       --c-danger:#b00020;
 
       --space-title-board: 24px;
+
+      /** 题组内：文/图/盘之间；题组与题组之间，均空一行（与说明文字行高一致） */
+      --tile-v-gap: calc(var(--hint-fs) * var(--hint-lh));
     }
 
     *{ box-sizing:border-box; }
@@ -76,30 +79,33 @@
       white-space:pre-wrap;
     }
 
-    /* ✅ 画板：自上而下四行，每行 = 画格 + 下方调色盘 */
+    /* ✅ 画板：自上而下四组；组与组之间空一行（--tile-v-gap） */
     .board{
       width:100%;
       background:#fff;
       border: var(--frame) solid #fff;
       display:flex;
       flex-direction: column;
-      gap: 0;
+      gap: var(--tile-v-gap);
       align-items: stretch;
       overflow:hidden;
     }
 
-    /** 单行：1280×960 横图（4:3）画格 + 题注 + paletteWrap */
+    /**
+     * 每组顺序：文字 → 1280×960 横图（4:3）→ 调色盘；
+     * 组内三项间距与组间间距均为 --tile-v-gap。
+     */
     .tileRow{
       width: 100%;
       display: flex;
       flex-direction: column;
       align-items: stretch;
+      gap: var(--tile-v-gap);
     }
 
-    /** 与页首 .title 同排版；图↔文、文↔盘各空一行 */
+    /** 与页首 .title 同排版 */
     .tileRow .tileCaption{
-      margin-top: calc(var(--hint-fs) * var(--hint-lh));
-      margin-bottom: calc(var(--hint-fs) * var(--hint-lh));
+      margin: 0;
       font-size: var(--hint-fs);
       line-height: var(--hint-lh);
       font-weight: 700;
@@ -109,7 +115,7 @@
 
     .tileRow .paletteWrap{
       margin-top: 0;
-      padding-top: 2px;
+      padding-top: 0;
     }
 
     .cell{
@@ -744,6 +750,7 @@
     row.className = "tileRow";
     row.dataset.key = tile.key;
     row.innerHTML = `
+      <div class="tileCaption" aria-label="线索"></div>
       <div class="cell">
         <div class="cellStack">
           <img class="bg" alt="" />
@@ -751,7 +758,6 @@
         </div>
         <div class="loading">资源加载中</div>
       </div>
-      <div class="tileCaption" aria-label="线索"></div>
       <div class="paletteWrap cellPaletteWrap" role="group" aria-label="选色">
         <div class="palette tilePalette"></div>
       </div>
