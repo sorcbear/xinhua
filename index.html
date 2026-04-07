@@ -404,9 +404,12 @@
     { key: "t4", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#9B857A" },
   ];
 
-  /** 在可涂区域内的手写「x」占位框（相对 bbox），可按需在单块 tile.reveal 上覆盖 boxRel / strokeFactor */
-  const X_BOX_REL = { x: 0.28, y: 0.28, w: 0.44, h: 0.44 };
-  const X_STROKE_FACTOR = 0.19;
+  /**
+   * 相对可涂 bbox 的内框：笔画缩放与质心钳制；默认铺满 bbox。
+   * 「x」中心落在黑色可涂像素质心，避免环形/凹形蒙版时 bbox 几何中心落在白区导致挖空失败。
+   */
+  const X_BOX_REL = { x: 0, y: 0, w: 1, h: 1 };
+  const X_STROKE_FACTOR = 0.22;
 
   const BRUSH_RADIUS = 18;
 
@@ -774,6 +777,8 @@
       this.interCtx = this.interCanvas.getContext("2d");
 
       this.bbox = null;
+      /** @type {{ cx: number, cy: number } | null} */
+      this._drawableCentroid = null;
 
       // ✅ NEW: 保存状态的 debounce
       this._saveTimer = null;
@@ -901,32 +906,44 @@
       }
     }
 
-    computeBBoxFromAlpha(imgData, w, h){
+    /**
+     * 根据最终可涂 alpha 统计 bbox 与像素质心。
+     * @param {ImageData} imgData
+     * @param {number} w
+     * @param {number} h
+     * @returns {{ bbox: {minx:number,miny:number,maxx:number,maxy:number}|null, centroid: {cx:number,cy:number}|null }}
+     */
+    analyzeDrawableBBoxAndCentroid(imgData, w, h){
       const data = imgData.data;
-      const step = 3;
+      const step = 2;
       let minx = w, miny = h, maxx = -1, maxy = -1;
+      let sx = 0, sy = 0, n = 0;
 
       for(let y=0; y<h; y+=step){
         for(let x=0; x<w; x+=step){
-          const i = (y*w + x) * 4;
-          const a = data[i+3];
-          if(a > 0){
+          const i = (y*w + x)*4;
+          if(data[i+3] > 0){
             if(x < minx) minx = x;
             if(y < miny) miny = y;
             if(x > maxx) maxx = x;
             if(y > maxy) maxy = y;
+            sx += x;
+            sy += y;
+            n++;
           }
         }
       }
-      if(maxx < 0) return null;
+      if(maxx < 0) return { bbox: null, centroid: null };
 
-      const pad = Math.round(Math.min(w,h) * 0.01);
-      return {
+      const pad = Math.round(Math.min(w,h)*0.01);
+      const bbox = {
         minx: Math.max(0, minx - pad),
         miny: Math.max(0, miny - pad),
         maxx: Math.min(w-1, maxx + pad),
         maxy: Math.min(h-1, maxy + pad),
       };
+      const centroid = n > 0 ? { cx: sx/n, cy: sy/n } : null;
+      return { bbox, centroid };
     }
 
     /**
@@ -959,19 +976,33 @@
       const imgData = this.whiteMaskCtx.getImageData(0,0,w,h);
       const data = imgData.data;
 
-      /** 白=禁涂（alpha 0），黑=可涂（alpha 255） */
+      /**
+       * 白=禁涂（alpha 0），黑=可涂（alpha 255）。
+       * 极低 alpha 视为 PNG 透明底板，禁涂。
+       */
       for(let i=0;i<data.length;i+=4){
-        const r=data[i], g=data[i+1], b=data[i+2];
+        const r=data[i], g=data[i+1], b=data[i+2], a0=data[i+3];
+        if(a0 < 12){
+          data[i+3] = 0;
+          continue;
+        }
         const lum=(r+g+b)/3;
-        data[i+3] = (lum >= 200) ? 0 : 255;
+        data[i+3] = (lum >= 198) ? 0 : 255;
       }
 
       this.whiteMaskCtx.putImageData(imgData, 0, 0);
-      this.bbox = this.tile.reveal ? this.computeBBoxFromAlpha(imgData, w, h) : null;
+      if(!this.tile.reveal){
+        this.bbox = null;
+        this._drawableCentroid = null;
+      }else{
+        const out = this.analyzeDrawableBBoxAndCentroid(imgData, w, h);
+        this.bbox = out.bbox;
+        this._drawableCentroid = out.centroid;
+      }
     }
 
     /**
-     * 在可涂区域 bbox 内绘制手写「x」笔画蒙版（与 correctPaint 做挖空）。
+     * 在可涂区域内绘制「x」蒙版；中心优先用黑色区域质心，并钳制在 boxRel 内框内。
      */
     rebuildLetterMask(){
       const w = this.letterMaskCanvas.width;
@@ -983,22 +1014,24 @@
       if(!this.tile.reveal) return;
 
       const bbox = this.bbox || { minx:0, miny:0, maxx:w-1, maxy:h-1 };
-      const bw = (bbox.maxx - bbox.minx);
-      const bh = (bbox.maxy - bbox.miny);
+      const bw = Math.max(1, bbox.maxx - bbox.minx);
+      const bh = Math.max(1, bbox.maxy - bbox.miny);
 
       const rel = this.tile.reveal.boxRel || X_BOX_REL;
       const strokeFactor = this.tile.reveal.strokeFactor != null ? this.tile.reveal.strokeFactor : X_STROKE_FACTOR;
 
       const bx = bbox.minx + bw * rel.x;
       const by = bbox.miny + bh * rel.y;
-      const boxW = bw * rel.w;
-      const boxH = bh * rel.h;
+      const boxW = Math.max(1, bw * rel.w);
+      const boxH = Math.max(1, bh * rel.h);
 
-      const cx = bx + boxW * 0.50;
-      const cy = by + boxH * 0.52;
+      let cx = this._drawableCentroid ? this._drawableCentroid.cx : (bx + boxW * 0.5);
+      let cy = this._drawableCentroid ? this._drawableCentroid.cy : (by + boxH * 0.52);
+      cx = Math.min(bx + boxW, Math.max(bx, cx));
+      cy = Math.min(by + boxH, Math.max(by, cy));
 
       const s = Math.min(boxW, boxH) / 140;
-      const strokeW = Math.max(12, Math.round(Math.min(boxW, boxH) * strokeFactor));
+      const strokeW = Math.max(14, Math.round(Math.min(boxW, boxH) * strokeFactor));
 
       const path = this.buildXPath(cx, cy, s);
 
