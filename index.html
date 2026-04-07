@@ -88,7 +88,7 @@
       overflow:hidden;
     }
 
-    /** 单行：方形画格 + paletteWrap */
+    /** 单行：1280×960 横图（4:3）画格 + 题注 + paletteWrap */
     .tileRow{
       width: 100%;
       display: flex;
@@ -96,9 +96,19 @@
       align-items: stretch;
     }
 
+    /** 与页首 .title 同排版；图↔文、文↔盘各空一行 */
+    .tileRow .tileCaption{
+      margin-top: calc(var(--hint-fs) * var(--hint-lh));
+      margin-bottom: calc(var(--hint-fs) * var(--hint-lh));
+      font-size: var(--hint-fs);
+      line-height: var(--hint-lh);
+      font-weight: 700;
+      text-align: left;
+      white-space: pre-wrap;
+    }
+
     .tileRow .paletteWrap{
-      /* 在图与调色盘之间多留约一行正文的空隙 */
-      margin-top: calc(8px + var(--fs-body) * var(--lh-body));
+      margin-top: 0;
       padding-top: 2px;
     }
 
@@ -111,23 +121,28 @@
 
       min-width:0;
       width: 100%;
+      aspect-ratio: 4 / 3;
 
       font-size:0;
       line-height:0;
     }
 
     .cellStack{
-      position: relative;
+      position: absolute;
+      inset: 0;
       width: 100%;
+      height: 100%;
       display: block;
     }
 
     .cellStack img.bg{
-      position: relative;
+      position: absolute;
+      left: 0;
+      top: 0;
       width: 100%;
-      height: auto;
+      height: 100%;
       display: block;
-      vertical-align: top;
+      object-fit: cover;
     }
 
     .cellStack canvas.overlay{
@@ -376,15 +391,14 @@
   /* ✅ NEW: 4 副图涂抹状态缓存（localStorage） */
   const TILE_STATE_KEY = "color_tiles_state_v2";
 
-  // ✅ 10 个颜色（两行每行 5 个），包含 4 个正确色
+  /**
+   * 10 色两行×五列。谜题唯一正确色为第二行第三格 `#0070C0`（与 TILES.correctColor 一致）；其余为干扰色。
+   */
   const PALETTE_COLORS = [
-    // ✅ 正确色（来自 TILES.correctColor）
     "#2A5A5E",
     "#C62622",
     "#E2C164",
     "#9B857A",
-
-    // ✅ 错误色（从你原来的 16 色里选 6 个）
     "#00E5FF",
     "#7030A0",
     "#FF4FA0",
@@ -393,15 +407,18 @@
     "#FF8C00"
   ];
 
+  /** 每行图下方的说明文案；单块可设 `tile.caption` 覆盖 */
+  const DEFAULT_TILE_CAPTION = "面向上海影城方向，在马路左边，新华路110-150范围内寻找。";
+
   /**
    * 自上而下四块；每块可单独改 bg / mask 文件名。
    * 当前目录仅有 blue.png / blue_mask.png 时四块共用同一资源，替换为不同文件即可。
    */
   const TILES = [
-    { key: "t1", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#2A5A5E" },
-    { key: "t2", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#C62622" },
-    { key: "t3", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#E2C164" },
-    { key: "t4", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#9B857A" },
+    { key: "t1", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#0070C0" },
+    { key: "t2", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#0070C0" },
+    { key: "t3", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#0070C0" },
+    { key: "t4", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#0070C0" },
   ];
 
   /**
@@ -734,10 +751,13 @@
         </div>
         <div class="loading">资源加载中</div>
       </div>
+      <div class="tileCaption" aria-label="线索"></div>
       <div class="paletteWrap cellPaletteWrap" role="group" aria-label="选色">
         <div class="palette tilePalette"></div>
       </div>
     `;
+    const cap = row.querySelector(".tileCaption");
+    cap.textContent = (tile.caption != null && String(tile.caption)) ? String(tile.caption) : DEFAULT_TILE_CAPTION;
     return row;
   }
 
