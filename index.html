@@ -76,7 +76,7 @@
       white-space:pre-wrap;
     }
 
-    /* ✅ 画板：自上而下四格，底图按原始比例宽度铺满 */
+    /* ✅ 画板：自上而下四行，每行 = 画格 + 下方调色盘 */
     .board{
       width:100%;
       background:#fff;
@@ -86,6 +86,19 @@
       gap: 0;
       align-items: stretch;
       overflow:hidden;
+    }
+
+    /** 单行：方形画格 + paletteWrap */
+    .tileRow{
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .tileRow .paletteWrap{
+      margin-top: 8px;
+      padding-top: 2px;
     }
 
     .cell{
@@ -329,10 +342,6 @@
 
     <div class="board" id="board"></div>
 
-    <div class="paletteWrap">
-      <div class="palette" id="palette"></div>
-    </div>
-
     <div class="answerBlock">
       <div class="answerRow">
         <div class="answerLabel">请依次输入隐藏的字符（不用区分大小写）：</div>
@@ -393,7 +402,7 @@
     { key: "t3", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#E2C164" },
     { key: "t4", bg: "blue.png", mask: "blue_mask.png", reveal: { type: "X" }, correctColor: "#9B857A" },
   ];
- 
+
   /** 在可涂区域内的手写「x」占位框（相对 bbox），可按需在单块 tile.reveal 上覆盖 boxRel / strokeFactor */
   const X_BOX_REL = { x: 0.28, y: 0.28, w: 0.44, h: 0.44 };
   const X_STROKE_FACTOR = 0.19;
@@ -444,7 +453,6 @@
   }
 
   const board = document.getElementById("board");
-  const palette = document.getElementById("palette");
 
   const ans = document.getElementById("ans");
   const btnHint = document.getElementById("btnHint");
@@ -578,8 +586,20 @@
 
   function clearPaletteSelection(){
     CURRENT_COLOR = null;
-    [...palette.children].forEach(x=>x.classList.remove("selected"));
+    document.querySelectorAll(".tilePalette .swatch").forEach((x)=>{ x.classList.remove("selected"); });
     setPaintLocked(false);
+  }
+
+  /**
+   * 所有行调色盘上同步当前选中色（data-color 为小写 hex）。
+   * @param {string} hex
+   */
+  function syncPaletteSelection(hex){
+    const norm = (hex || "").trim().toLowerCase();
+    document.querySelectorAll(".tilePalette .swatch").forEach((el)=>{
+      const dc = (el.getAttribute("data-color") || "").trim().toLowerCase();
+      el.classList.toggle("selected", dc === norm);
+    });
   }
 
   /* =========================================================
@@ -670,45 +690,51 @@
     }, true);
   }
 
-  /* ===== palette 渲染 ===== */
-  function renderGlobalPalette(){
-    palette.innerHTML = "";
-    PALETTE_COLORS.forEach(c=>{
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "swatch";
-      b.style.setProperty("--c", c);
+  /**
+   * 在每行 `.tilePalette` 内渲染相同色盘；须在 makeTiles 之后调用。
+   */
+  function renderAllPalettes(){
+    board.querySelectorAll(".tilePalette").forEach((palette)=>{
+      palette.innerHTML = "";
+      PALETTE_COLORS.forEach((c)=>{
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "swatch";
+        b.setAttribute("data-color", c.trim().toLowerCase());
+        b.style.setProperty("--c", c);
 
-      b.addEventListener("click", ()=>{
-        CURRENT_COLOR = c;
-        [...palette.children].forEach(x=>x.classList.remove("selected"));
-        b.classList.add("selected");
+        b.addEventListener("click", ()=>{
+          CURRENT_COLOR = c;
+          syncPaletteSelection(c);
+          setPaintLocked(true);
+        });
 
-        // ✅ 选中颜色后：画板锁定为只涂抹（禁滚动）
-        setPaintLocked(true);
+        palette.appendChild(b);
       });
-
-      palette.appendChild(b);
     });
   }
-  renderGlobalPalette();
 
   /**
    * @param {{ key: string }} tile
    * @returns {HTMLDivElement}
    */
   function makeCellDOM(tile){
-    const cell = document.createElement("div");
-    cell.className = "cell";
-    cell.dataset.key = tile.key;
-    cell.innerHTML = `
-      <div class="cellStack">
-        <img class="bg" alt="" />
-        <canvas class="overlay"></canvas>
+    const row = document.createElement("div");
+    row.className = "tileRow";
+    row.dataset.key = tile.key;
+    row.innerHTML = `
+      <div class="cell">
+        <div class="cellStack">
+          <img class="bg" alt="" />
+          <canvas class="overlay"></canvas>
+        </div>
+        <div class="loading">资源加载中</div>
       </div>
-      <div class="loading">资源加载中</div>
+      <div class="paletteWrap cellPaletteWrap" role="group" aria-label="选色">
+        <div class="palette tilePalette"></div>
+      </div>
     `;
-    return cell;
+    return row;
   }
 
   class ScratchTile{
@@ -716,11 +742,11 @@
       this.tile = tile;
       this.root = root;
 
-      this.img = root.querySelector(".cellStack img.bg");
-      this.cv  = root.querySelector(".cellStack canvas.overlay");
+      this.img = root.querySelector(".cell .cellStack img.bg");
+      this.cv  = root.querySelector(".cell .cellStack canvas.overlay");
       this.ctx = this.cv.getContext("2d", { alpha:true });
 
-      this.loading = root.querySelector(".loading");
+      this.loading = root.querySelector(".cell .loading");
 
       this.down = false;
       this.last = null;
@@ -1134,14 +1160,15 @@
   function makeTiles(){
     const arr = [];
     TILES.forEach((t)=>{
-      const cell = makeCellDOM(t);
-      board.appendChild(cell);
-      arr.push(new ScratchTile(t, cell));
+      const row = makeCellDOM(t);
+      board.appendChild(row);
+      arr.push(new ScratchTile(t, row));
     });
     return arr;
   }
 
   tiles = makeTiles();
+  renderAllPalettes();
 
   window.addEventListener("resize", ()=>{
     tiles.forEach(t=>{
